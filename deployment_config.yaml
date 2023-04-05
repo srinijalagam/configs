@@ -1,0 +1,266 @@
+# yaml-language-server: $schema=./values.schema.json
+
+vcs.revision: VCS_REVISION_NUMBER # Added by the pipeline automatically
+
+image:
+  pullPolicy: IfNotPresent
+
+global:
+  # NOTE: All registry is to be set at deployment time and must refer to the image repository.
+  #registry:  #GLOBAL_REGISTRY#
+  #registry1: #GLOBAL_REGISTRY1#
+  #registry2: #GLOBAL_REGISTRY2#
+  #registry3: #GLOBAL_REGISTRY3#
+  #registry4: #GLOBAL_REGISTRY4#
+
+  externalServices:
+    zts:
+      ip: # IP or FQDN
+      ports:
+        cm: 8080
+        pm: 8079
+        fm_log: 8078
+        fm_alarm: 8079
+
+  zts:
+    vnfId: # A unique ID towards ZTS. Mandatory parameter if you would like to use CM, FM, PM funtionalities. Each NEF instance should have a unique ID and that being registered at ZTS.
+    release: 23.2.0
+    clusterName: zts1 #zts cluster name what was used during ztsdeployment
+    secretName: zts-tls-secret # Secret containing tls.key and tls.crt; certificate signed by CA of ZTS.
+    tlsCert: tls.crt # cert referenc in zts secret
+    tlsKey: tls.key # key referenc in zts secret
+
+  node:
+    worker: # Nodes of components which do not have their separate node settings. Components with high chance of special needs have their own node settings.
+      nodeSelector: {}
+      tolerations: []
+
+  cassandra:           # Database access settings used by services, i.e. session-counters.
+    username:          "nef" # Role name to access tables monitored by session-counters service.
+    password:          # Password in base64 encoded form. Lets credentials secret to be automatically generated. Optional, secret can be created by other means.
+    credentialsSecret: dbcass-cassandra-credentials # K8s secret containing username and base64-encoded password. If username and password are provided then this secret is generated automatically.
+    ownTLSSecret:      # K8s secret containing tls.crt and tls.key. Needed if Cassandra authenticates the client (mTLS).
+    caCertSecret:      # K8s secret containing PEM certificate files (*.pem or *.crt) used to authenticate Cassandra server.
+
+  ## Optionally configure multus for Cassandra.  If specified here,
+  ## this configuration will be applied to cassandra.yaml
+  ## overrides the config section
+  enable_multus: false
+  multus:
+    ## Network device name in pod
+    host_device: # for example net1
+    ## Network name
+    name: # for example "dbcassmultus"
+    ## ipvlan, macvlan, bridge, host device
+    networktype: # for example ipvlan
+    ## Last IP address from the range
+    range_end:
+    ## First IP address from the range
+    range_start:
+    ## Gateway within the subnet
+    route_dst_gw:
+    ## IP addresses allocated from this subnet. Valid address in CIDR format
+    subnet_range:
+    ## Network device name in node
+    worker_device: # for example eth2
+    ## List all the route destinations for all subnets
+    routes:
+      dst:
+        - # Valid address in CIDR format
+
+ztshook:
+  enabled: false # If you set it to true: Enable hook to connect ZTS securely and do some necessary steps: metadata uploading, CM-CNF creation with netconf.xml, CNF creation for FM,PM,LOG.
+  #if ztslcmpassword is empty , operator need to create kubernetes secret ztshooklcmpasswdsecret with "key: zts.password".
+  ztslcmpassword: # zts1user password (in plaintext) what you used at ztsdeployment. Default: User@1234 (If you want to use secret leave it empty.)
+
+  metadata_version: "major:23|minor:2.0" # vnf version example: major:21 | minor:2.0
+
+  # User Provisioning related parameters below:
+  UM_provision: disable #enable/disable enable: "cmsshuser" user with password "Password@1234" will be available regading to reach ZTS cmserver-x via ssh.
+  #if UM_provision flag is enabled and UM_admin_password value is empty, operator need to create kubernetes secret ztshookumadminsecret in cnf namespace with "key: umadmin.password".
+  UM_admin_password: # ZTS UM service admin Password (in plaintext) what you used at ztsdeployment. Default: Admin@123 (If you want to use secret leave it empty.)
+
+  # NetAct related parameters below:
+  AIF_Enabled: "True" # Automatically integrating with NetAct. True / False (capital 1st letter needed)
+  NetactPlmn: "PLMN-PLMN" # PLMN name in NetAct
+  NetactMrname: "MRC-1/MR-1" # Maintenance Regio name in NetAct
+
+cert-relay-service:
+  enabled: false # Enabled if you use ztshook.
+  replicaCount:
+
+  # LogLevel can be used to limit the importance of visible log messages
+  # Possible values are "fatal", "error", "warn", "info", "debug", "trace"
+  # in decreasing importance.
+  logLevel: "info"
+
+  config:
+    ztsOnly: true # Use this service for only ZTS secret generation, default is "true"
+    expiryCheckIntervalInDays: # Defines the default expiration intervals (in days) for certificates, default is 30
+    dbcassSni: # Define the dbcass address, which is used in the NEF.
+
+fm-log-relay:
+  enabled: false # Enabled if you use ZTS FM logging.
+  replicaCount: # The number of replicas
+  logLevel:
+
+fm-alarm-relay:
+  enabled: false # Enabled if you use ZTS FM alarms.
+  replicaCount: # The number of replicas
+  logLevel:
+
+fm-fluentd:
+  enabled: false # Enabled if you use ZTS FM logging or alarms.
+  cbur:
+    enabled: false
+
+
+
+pmrelay:
+  enabled: false # Enabled if you use ZTS PM.
+  logLevel:
+  PrometheusURL: NULL # If NULL, http://<deploymentname>-cpro-server:80 is used
+  IntervalMinutes: 15
+  AlarmCheckInterval: 15
+  ThresholdOfUnauthorizedResponses: 1000
+  customCounters: #-'countername:promql query (for the previous period):aggregation type(sum/avg)'
+    #-'nef_nidd_api_counters:sum(round(increase(nef_api_counters{kind="NIDD"}[#RANGE#]))):sum'
+
+cpro:
+  enabled: false
+  restrictedToNamespace: true # If the flag is set to true, then server component scrape the metrics within listed namespaces.
+  server:
+    namespaceList: ["($.Release.Namespace)"] # If the restrictedToNamespace flag is set to true, then list the namespaces to monitor in comma-separated values.
+    baseURL: "http://localhost/prometheus"
+    cbur:
+      enabled: false
+    persistentVolume:
+      size: 64Gi #Size of database volume. cpro default = 16Gi
+    retention:
+      time: 1d  #Duration = How long the metric data is stored in the database. cpro default = 15d. (15days)
+    nodeSelector: {}
+    tolerations: []
+  alertmanager:
+    enabled: false
+  nodeExporter:
+    enabled: false
+  zombieExporter:
+    enabled: false
+  pushgateway:
+    enabled: false
+  restserver:
+    enabled: true
+    nodeSelector: {}
+    tolerations: []
+  kubeStateMetrics:
+    nodeSelector: {}
+    tolerations: []
+    args:
+      namespace: "($.Release.Namespace)" # Comma-separated list of namespaces to be enabled.
+
+
+session-counters:
+  enabled: false # Depending on your case, the tables to be monitored are not available at deployment time. Set true and issue helm upgrade when ready. Make sure Prometheus scrapes it.
+
+  config:
+    logLevel: info
+    # MeasurementInterval indicates the period of time in the report cronjob should be triggered. By default it is 15 minutes in cron ("*/15 * * * *").
+    measurementInterval:
+    # Tables indicates which database tables' row count should be measured. E.g. "keyspace_A.table_A, keyspace_B.table_B"
+    # tables:
+
+ingress:
+  enabled: false # Set to false if you use your own ingress controller. Or if you install a DB which is to be accessed within K8s cluster only. In that case make sure port 9042 is tunneled to Cassandra.
+  controller:
+    httpPort: 9080    # Not to conflict with other ingress controllers in the cluster.
+    httpsPort: 9443   # Not to conflict with other ingress controllers in the cluster.
+    statusPort: 18081 # Not to conflict with other ingress controllers in the cluster.
+    scope:
+      enabled: true # true: watch Ingress, Service and other resources in own namespace only; false: watch the whole Kubernetes cluster
+    runOnEdge: true # Set this to false if you do not want to run only on edge nodes.
+    nodeSelector: {} # When runOnEdge is true, then this value may be omitted and ingress is scheduled on edge nodes.
+    tolerations: [{"key":"is_edge", "operator":"Equal", "value":"true", "effect":"NoExecute"}]
+    # imageTag: 1.22.1-1.1.2-1.3.2-v1.3.1-rocky8 # Uncomment this if NCS20 is used.
+    service: # K8s Service resource parameters
+      type: ClusterIP # ClusterIP / LoadBalancer
+      externalIPs: [] # List of IP addresses at which the ingress controller services are available. Such as edge node IP addresses. https://kubernetes.io/docs/user-guide/services/#external-ips
+  tcp:
+    9042: "{{ .Release.Namespace }}/{{ .Release.Name }}-ccas-apache:9042"
+
+ccas-apache:
+  replica_count: 1 # Number of nodes. Make sure it meets replication factor needs of data tables.
+
+  selector: # nodeSelector of main Cassandra pods
+    nodeSelector: {}
+  tolerations: []
+
+  admin: # Administrative jobs
+    nodeSelector: {}
+
+  metrics:
+    enabled: true
+    annotate_service: true
+  config:
+    cluster_name: MyCluster # A common name for the whole cluster. Same for all DCs.
+    cluster_datacenter: MyCenter # Name of this DC. Make sure each DC has its distinctive name.
+    seed_count: 1 # Number of seed nodes.
+    seeds: # Each seed separated with comma, seed syntax: <pod-name>.<service-name>.<namespace>.svc.cluster.local
+    monitor_peers: true # If multus is enabled, then set this value to false
+    enable_materialized_views: true
+    cluster_domain: cluster.local
+    cassandra_superuser: c3VhZG1pbmNhc3M= # base64 of suadmincass
+    cassandra_superpass: dG9wc2VjcmV0 # Admin password for the cluster. Base64 encoded string. If not set then generated randomly.
+    client_encryption: false   # Use encryption when communicating with clients. Clients must be configured to use encryption.
+    require_client_auth: false # Authenticate client certificate.
+    internode_encryption: none # Possible values: none, rack, dc, all
+    certificates: # If certManager is enabled, then do not set these.
+      client_keystore: # Keystore file in secret, e.g. keystore.jks
+      server_keystore: # Keystore file in secret, e.g. keystore.jks
+      client_truststore: # Truststore file in secret, e.g. truststore.jks
+      server_truststore: # Truststore file in secret, e.g. truststore.jks
+      server_keystore_password: # base64 encoded password of keystore
+      client_keystore_password: # base64 encoded password of keystore
+      client_truststore_password: # base64 encoded password of truststore
+      server_truststore_password: # base64 encoded password of truststore
+      store_type: PKCS12
+      client_key:  # Cassandra private key file in secret
+      client_cert: # Cassandra certificate chain file in secret
+      server_key:  # Cassandra private key file in secret
+      server_cert: # Cassandra certificate chain file in secret
+      client_ca_cert: # CA certificate file in secret, e.g. rootca.crt
+      server_ca_cert: # CA certificate file in secret, e.g. rootca.crt
+      secret: # Secret containing keystore, truststore, private key, certificate chain and CA certificate files.
+    override: # override config parameters, to be used only if upgrading or having upgraded from DBCass 22.0 or earlier versions.
+      cassandra:
+      - regex: 'num_tokens: 16'
+        replacement: 'num_tokens: 256'
+  certManager:
+    enabled: false # Set true if cert-manager.io is to manage database client and internode TLS certificates.
+    duration: 8760h # 365 days validity for certificates.
+    renewBefore: 360h # Renew before 15 days of expiration.
+    keySize: 4096 # Key bit size of RSA private key. Must be between 2048 and 8192 inclusive.
+    issuerRef:
+      name: ncms-ca-issuer # Name of issuer.
+      kind: ClusterIssuer # ClusterIssuer or Issuer (namespace local)
+    dnsNames: ["dbcass"] # Array of TLS subject alternative names for the certificate. Can use wildcard, such as ["*.example.com"].
+  persistence:
+    storageClass: # Storage class to use. If not set, then K8s cluster default is used.
+    size: 10Gi # Size of persistent volume.
+  resources:
+    requests:
+      memory: 4Gi
+      cpu:    3
+    limits:
+      memory: 8Gi
+      cpu:    4
+    java_heapsize: 2g # Java heap size; Recommended=2g, depending on pod limits.
+    java_newsize: 512m # Java heap young generation size. Recommended=512m.
+  minconfig:
+    Enabled: false # Set true if you want resource constrained, less performant deployment. Overrides "resources". For test setups only.
+  cbur:
+    enabled: false # Set true if Nokia CBUR is installed and backup & restore is desired.
+    # apiVersion: "cbur.bcmt.local/v1" # This configuration is needed when DBCASS with cbur deployed on NCS20
+  # selector:
+  #   nodeSelector: {}
+  reaper:
+    enabled: false
